@@ -1,0 +1,50 @@
+{
+  "name": "tinhead-mcp",
+  "version": "0.1.0",
+  "description": "A local MCP door onto your Tinhead thought tree. Holds your key on your machine; the server never gets one it can use.",
+  "license": "Apache-2.0",
+  "author": "Tinhead",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tinhead-app/tinhead-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Tinhead-app/tinhead-mcp/issues"
+  },
+  "homepage": "https://github.com/Tinhead-app/tinhead-mcp#readme",
+  "bin": {
+    "tinhead-mcp": "./dist/packages/tinhead-mcp/src/cli.js"
+  },
+  "main": "./dist/packages/tinhead-mcp/src/server.js",
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check:publish": "node scripts/prepublish-check.mjs",
+    "prepublishOnly": "npm run build && npm run check:publish"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "libsodium-wrappers-sumo": "^0.7.15"
+  },
+  "devDependencies": {
+    "@types/libsodium-wrappers-sumo": "^0.7.8",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "tinhead",
+    "e2ee",
+    "notes"
+  ]
+}

@@ -1,0 +1,36 @@
+# Publish tinhead-mcp to npm, with provenance.
+#
+# Provenance links the published tarball to this repository and this commit,
+# so "the source you can read is the code you installed" is attested by npm
+# rather than promised by us. It requires `id-token: write` and a public repo.
+#
+# Needs one secret: NPM_TOKEN (an npm *automation* token).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for npm provenance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run build
+      # The suites run before anything is published, not after.
+      - run: npm test
+      # `prepublishOnly` re-builds and runs scripts/prepublish-check.mjs, so a
+      # release cannot ship while the metadata or the licence is incomplete.
+      - run: npm publish --provenance --access public
+        working-directory: packages/tinhead-mcp
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,23 @@
+{
+  "name": "tinhead-mcp-source",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Build tree for tinhead-mcp. Installs the dependencies its sources resolve from the root.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "tsc -p packages/tinhead-mcp/tsconfig.json",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "libsodium-wrappers-sumo": "^0.7.15"
+  },
+  "devDependencies": {
+    "@types/libsodium-wrappers-sumo": "^0.7.8",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "@types/jest": "^29.5.14",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.5"
+  }
+}

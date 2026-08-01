@@ -1,0 +1,93 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM"],
+    "module": "CommonJS",
+    // CommonJS output with extensionless relative imports, which is what the app's
+    // sources use and what jest already runs. TS calls `node10` deprecated ahead of
+    // TS 7; the alternative today is full ESM with `.js` on every relative import,
+    // which would fork these files from the app's and buy nothing a CLI needs.
+    "moduleResolution": "node10",
+    "ignoreDeprecations": "5.0",
+    "strict": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "declaration": false,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "../..",
+    "types": ["node"],
+    // The SDK declares its entry points in an `exports` map, which `node10`
+    // resolution predates — so tsc is pointed at the type files directly while
+    // the EMITTED `require('@modelcontextprotocol/sdk/server')` is left alone.
+    // Node itself honours the exports map at runtime (verified), so this is a
+    // typecheck-only bridge, not a deep import baked into the shipped code.
+    //
+    // TWO locations, tried in order, so ONE tsconfig serves both layouts: this
+    // repo installs the SDK in the package (`./node_modules`), and the generated
+    // public repo (SPEC-AGENT §10, `scripts/build-public-repo.mjs`) installs at
+    // its ROOT — because the app modules under `src/` sit outside this directory
+    // and resolve by walking up from themselves, which only ever reaches a root.
+    // A rewritten tsconfig in the published tree would be a second copy of the
+    // build, and the one thing that repository exists to prove is that what is
+    // published is what compiled.
+    "paths": {
+      "@modelcontextprotocol/sdk/server": [
+        "./node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.d.ts",
+        "../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.d.ts"
+      ],
+      "@modelcontextprotocol/sdk/server/stdio.js": [
+        "./node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.d.ts",
+        "../../node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.d.ts"
+      ],
+      "@modelcontextprotocol/sdk/types.js": [
+        "./node_modules/@modelcontextprotocol/sdk/dist/esm/types.d.ts",
+        "../../node_modules/@modelcontextprotocol/sdk/dist/esm/types.d.ts"
+      ],
+      // The two below are used by `__tests__/protocol.test.ts` only — the server
+      // never imports a client — and `exclude` keeps the tests out of the build,
+      // so they are inert here. They are in this list rather than a test-only
+      // config because `paths` REPLACES rather than merges when a config extends
+      // another, and three duplicated entries would be three places to get the
+      // SDK's layout wrong. The published repo typechecks its tests with ts-jest,
+      // which is stricter than this repo's babel-based runner and found this.
+      "@modelcontextprotocol/sdk/client": [
+        "./node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.d.ts",
+        "../../node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.d.ts"
+      ],
+      "@modelcontextprotocol/sdk/inMemory.js": [
+        "./node_modules/@modelcontextprotocol/sdk/dist/esm/inMemory.d.ts",
+        "../../node_modules/@modelcontextprotocol/sdk/dist/esm/inMemory.d.ts"
+      ]
+    }
+  },
+  // The app modules this package compiles against — the set a sceptic needs in
+  // order to check §4, §8 and §9, and no more (SPEC-AGENT §10). The UI, the
+  // store, the theme and the sync ENGINE are not here.
+  //
+  // They are NOT in the published tarball, and this comment used to say they
+  // were: `files` cannot reach outside the package directory, so `npm pack`
+  // yields dist/ + this package's own src/ + README + LICENSE. Building from an
+  // extracted tarball therefore does not work either — the include paths below
+  // point at `../../src`. The audit surface is the repository (README, "Build
+  // from source"), which is one copy of the crypto rather than two.
+  "include": [
+    "src/**/*.ts",
+    "../../src/agent/**/*.ts",
+    "../../src/core/**/*.ts",
+    "../../src/crypto/index.ts",
+    "../../src/crypto/sodium.ts",
+    "../../src/crypto/sha256.ts",
+    "../../src/model/**/*.ts",
+    "../../src/compile/index.ts",
+    "../../src/compile/ir.ts",
+    "../../src/compile/render.ts",
+    "../../src/compile/targets.ts",
+    "../../src/presets/presets.ts",
+    "../../src/sync/payload.ts",
+    "../../src/sync/types.ts",
+    "../../src/db/persistence.ts"
+  ],
+  "exclude": ["**/__tests__/**", "../../src/**/__tests__/**", "node_modules", "dist"]
+}

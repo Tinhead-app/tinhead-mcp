@@ -1,0 +1,9 @@
+{
+  "extends": "./packages/tinhead-mcp/tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "node",
+      "jest"
+    ]
+  }
+}
