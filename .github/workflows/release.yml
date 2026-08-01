@@ -41,6 +41,13 @@ jobs:
         with:
           node-version: '22'
           registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm CLI >= 11.5.1, and Node 22 still ships
+      # 10.9.8 — which has no OIDC support at all. It does not fail loudly: it
+      # never attempts OIDC, falls through to token auth it does not have, and
+      # the registry rejects the unauthenticated PUT as a 404 that reads like a
+      # misconfigured trusted publisher. Four releases died here.
+      - run: npm install -g npm@latest
+      - run: npm --version
       - run: npm ci
       - run: npm run build
       # The suites run before anything is published, not after.
