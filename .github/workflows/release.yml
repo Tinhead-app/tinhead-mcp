@@ -19,8 +19,11 @@ jobs:
       contents: read
       id-token: write # required for npm provenance
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # v4 of both still targets Node 20, which the runners now force onto 24
+      # and annotate every run about. A deprecation warning on the release of a
+      # package whose pitch is auditability is a bad first impression.
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           registry-url: https://registry.npmjs.org
