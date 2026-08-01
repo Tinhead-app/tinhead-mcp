@@ -76,6 +76,7 @@ import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { LABEL_RE } from './setupHints';
 
 const execFileAsync = promisify(execFile);
 
@@ -466,11 +467,19 @@ export async function purgeCodeShapedNames(): Promise<number> {
 
 // ------------------------------------------------------- the non-secret half
 
-/** One connection this machine has logged in to. Neither field is a secret (§4.5). */
+/** One connection this machine has logged in to. No field here is a secret (§4.5). */
 export interface StoredGrant {
   grantId: string;
   /** The `grant_gateway` endpoint the setup code named. */
   url: string;
+  /**
+   * The stable handle a client config names this connection by (`--as <name>`).
+   *
+   * Optional only because rows written before labels existed have none; those
+   * still resolve by "there is exactly one". Every row `login` writes now has
+   * one, and it is what makes a config outlive the grant it points at.
+   */
+  name?: string;
 }
 
 const CONNECTIONS = 'connections.json';
@@ -496,7 +505,7 @@ export async function listGrants(): Promise<StoredGrant[]> {
       ? ((parsed as { connections: unknown[] }).connections)
       : [];
     return rows
-      .map((r) => r as { grantId?: unknown; url?: unknown })
+      .map((r) => r as { grantId?: unknown; url?: unknown; name?: unknown })
       .filter(
         (r): r is StoredGrant =>
           typeof r.grantId === 'string' &&
@@ -504,15 +513,51 @@ export async function listGrants(): Promise<StoredGrant[]> {
           typeof r.url === 'string' &&
           /^https:\/\/[^\s]+$/i.test(r.url)
       )
-      .map((r) => ({ grantId: r.grantId, url: r.url }));
+      .map((r) => ({
+        grantId: r.grantId,
+        url: r.url,
+        // A label is dropped rather than repaired, exactly as a non-https URL is:
+        // this file decides which connection a config resolves to, and the only
+        // way a malformed one gets in is an edit by hand. A dropped label makes
+        // the row unreachable by name, which is visible; a repaired one would
+        // quietly answer to something nobody wrote.
+        ...(typeof r.name === 'string' && LABEL_RE.test(r.name) ? { name: r.name } : {}),
+      }));
   } catch {
     return [];
   }
 }
 
-/** Record a connection, replacing any earlier row for the same grant. */
+/**
+ * Record a connection, replacing any earlier row for the same grant **or the
+ * same label**.
+ *
+ * The label half is the healing path, and it is the reason a config stops going
+ * stale: revoke a connection in the app, issue a fresh one, `login` under the
+ * same label, and every config naming that label works again with no edit. That
+ * only holds if the new row REPLACES the old one — two rows sharing a label
+ * would put the ambiguity straight back.
+ *
+ * **A displaced row's token is deleted with it.** Leaving a sealed secret behind
+ * for a grant nothing will ever name again is the orphan the store/fallback pair
+ * already had to fix once: a later login reusing that id would find it and prefer
+ * it to the code just pasted. Best-effort by design — a token we cannot remove
+ * must not stop the row that replaces it from being written.
+ */
 export async function rememberGrant(grant: StoredGrant): Promise<void> {
-  const rest = (await listGrants()).filter((g) => g.grantId !== grant.grantId);
+  const before = await listGrants();
+  const displaced = before.filter(
+    (g) => g.grantId === grant.grantId || (!!grant.name && g.name === grant.name)
+  );
+  const rest = before.filter((g) => !displaced.includes(g));
+
+  for (const old of displaced) {
+    if (old.grantId === grant.grantId) continue; // the token being stored right now
+    await forgetUnder(storeKey(old.grantId));
+    const legacy = legacyKey(old.grantId);
+    if (legacy) await forgetUnder(legacy);
+  }
+
   const dir = await ensureDir();
   await writeFile(
     join(dir, CONNECTIONS),

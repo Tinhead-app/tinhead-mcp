@@ -226,6 +226,102 @@ suite('the non-secret half', () => {
 });
 
 /**
+ * The label — the handle a client config names, and the reason one stops going
+ * stale.
+ *
+ * A config used to carry `TINHEAD_GRANT: <uuid>`, which is a snapshot of state
+ * that legitimately changes: the id dies on every revoke, reissue and `forget`,
+ * and the config naming it is a file this tool can never reach again. The door
+ * then refused to start and an MCP client showed no tools at all, with nothing
+ * on screen tying the two together.
+ *
+ * The replacement only works if a re-login under the same name REPLACES the row.
+ * Two rows sharing a label would put the ambiguity straight back, and a token
+ * left behind for the displaced grant is the shadowing bug the store and the
+ * fallback already had to fix between them.
+ */
+suite('a connection’s name', () => {
+  const OLD = '44444444-4444-4444-8444-444444444444';
+  const NEW = '55555555-5555-4555-8555-555555555555';
+  const A = 'https://a.example/functions/v1/grant_gateway';
+  const B = 'https://b.example/functions/v1/grant_gateway';
+
+  afterEach(async () => {
+    for (const n of await names()) await rm(join(stateDir(), n), { force: true });
+  });
+
+  it('survives the connection behind it being replaced — the whole point', async () => {
+    await storeToken(OLD, TOKEN);
+    await rememberGrant({ grantId: OLD, url: A, name: 'work' });
+
+    // Revoked in Tinhead, reissued, logged in again under the same name.
+    await storeToken(NEW, TOKEN);
+    await rememberGrant({ grantId: NEW, url: B, name: 'work' });
+
+    const all = await listGrants();
+    expect(all).toHaveLength(1);
+    expect(all[0]).toEqual({ grantId: NEW, url: B, name: 'work' });
+    // Which means a config saying `--as work` needs no edit at all.
+  });
+
+  it('deletes the displaced connection’s stored code with it', async () => {
+    await storeToken(OLD, TOKEN);
+    await rememberGrant({ grantId: OLD, url: A, name: 'work' });
+    await storeToken(NEW, TOKEN);
+    await rememberGrant({ grantId: NEW, url: B, name: 'work' });
+
+    // Otherwise a later login reusing OLD's id would find this and prefer it.
+    expect(await loadToken(OLD)).toBeNull();
+    expect((await loadToken(NEW))?.token).toBe(TOKEN);
+  });
+
+  it('does NOT delete the code of the connection being stored', async () => {
+    // The `continue` guard: re-remembering the same grant (a changed URL, a
+    // rename) must not take out the token that was just written for it.
+    await storeToken(OLD, TOKEN);
+    await rememberGrant({ grantId: OLD, url: A, name: 'work' });
+    await rememberGrant({ grantId: OLD, url: B, name: 'work' });
+
+    expect((await loadToken(OLD))?.token).toBe(TOKEN);
+    expect(await listGrants()).toEqual([{ grantId: OLD, url: B, name: 'work' }]);
+  });
+
+  it('keeps two differently-named connections apart', async () => {
+    await rememberGrant({ grantId: OLD, url: A, name: 'work' });
+    await rememberGrant({ grantId: NEW, url: B, name: 'personal' });
+
+    const all = await listGrants();
+    expect(all).toHaveLength(2);
+    expect(all.map((g) => g.name).sort()).toEqual(['personal', 'work']);
+  });
+
+  it('drops a hand-edited name rather than repairing it, and keeps the row', async () => {
+    // Same rule as a non-https URL: this file decides which connection a config
+    // resolves to, so a name nobody could have written is not answered to. The
+    // row survives — it is still reachable by "there is exactly one".
+    await writeFile(
+      join(stateDir(), 'connections.json'),
+      JSON.stringify({
+        connections: [{ grantId: OLD, url: A, name: 'Not A Label' }],
+      }),
+      'utf8'
+    );
+    expect(await listGrants()).toEqual([{ grantId: OLD, url: A }]);
+  });
+
+  it('reads a row written before labels existed', async () => {
+    await writeFile(
+      join(stateDir(), 'connections.json'),
+      JSON.stringify({ connections: [{ grantId: OLD, url: A }] }),
+      'utf8'
+    );
+    const all = await listGrants();
+    expect(all).toEqual([{ grantId: OLD, url: A }]);
+    expect(all[0].name).toBeUndefined();
+  });
+});
+
+/**
  * Forgetting a connection — the papercut this closes, and the thing it must not
  * get wrong.
  *

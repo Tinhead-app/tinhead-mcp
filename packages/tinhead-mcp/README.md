@@ -105,13 +105,13 @@ a no-op and it is protected by your user profile's ACL and nothing else.)
 rather than this. On macOS and Linux it looks like:
 
 ```bash
-claude mcp add tinhead -- npx -y tinhead-mcp
+claude mcp add tinhead -- npx -y tinhead-mcp --as default
 ```
 
 **On Windows it is a different command, and this is not a typo:**
 
 ```powershell
-claude mcp add-json tinhead '{\"command\":\"npx\",\"args\":[\"-y\",\"tinhead-mcp\"]}'
+claude mcp add-json tinhead '{\"command\":\"npx\",\"args\":[\"-y\",\"tinhead-mcp\",\"--as\",\"default\"]}'
 ```
 
 `claude` on Windows is an npm-generated PowerShell shim, and the `--` that stops option parsing is
@@ -119,9 +119,9 @@ lost before it reaches the CLI — so the first command fails there with `error:
 including in its own documentation's form. `add-json` takes one argument and needs no separator, and
 the backslashes are because PowerShell strips bare double quotes out of a native command's arguments.
 
-Either way: no secrets, no address, nothing to fill in, because this machine already knows which
-connection that is. The line is safe to paste anywhere — the code is in your credential store and
-the address is in `connections.json`.
+Either way: no secrets and no address, because this machine already knows which connection that is.
+The line is safe to paste anywhere — the code is in your credential store and the address is in
+`connections.json`.
 
 Using a different MCP client? Add this to its config instead:
 
@@ -130,18 +130,27 @@ Using a different MCP client? Add this to its config instead:
   "mcpServers": {
     "tinhead": {
       "command": "npx",
-      "args": ["-y", "tinhead-mcp"]
+      "args": ["-y", "tinhead-mcp", "--as", "default"]
     }
   }
 }
 ```
 
-If you log in **more than one** connection on this machine, that becomes ambiguous and the server
-says so rather than guessing — the command gains `--env TINHEAD_GRANT=<the connection id>` and the
-block gains `"env": { "TINHEAD_GRANT": "..." }`, with the address still coming from
-`connections.json`. `login` prints whichever form you need, so there is nothing to copy from here.
-(`TINHEAD_URL` overrides the stored address if you ever need it — pointing the door at a gateway of
-your own is the reason it exists.)
+**`--as` names a connection, and that name is yours.** `default` is what bare `login` uses; a second
+connection gets its own with `npx tinhead-mcp login --as work`, and registers as a separate server
+(`tinhead-work`) so the two never collide.
+
+The name is the only thing your config carries, and that is deliberate. **It keeps working when the
+connection behind it does not:** revoke a connection in Tinhead, issue a fresh code, run
+`npx tinhead-mcp login --as <the same name>`, and every config naming it resolves to the new one
+with nothing to edit. An earlier version of this tool put the connection **id** in the config
+instead. That was correct the day it was printed and dead after the next revoke or reissue — and
+because a config is a file this tool cannot reach, the only symptom was an MCP client that quietly
+stopped listing any tools.
+
+(`TINHEAD_GRANT` and `TINHEAD_URL` still work as an override — the pair points the door at a gateway
+of your own, which is the reason they exist. `TINHEAD_GRANT` alone is the pre-`--as` form; it is
+still honoured, and the server tells you what to replace it with.)
 
 **4. Give it a branch.** A connection with no branches connects and can then do nothing. In
 Tinhead, open the thought you want the agent to work in and choose `Options › Give access`. Repeat
@@ -210,8 +219,10 @@ as a document.
   rotation, and the app's own revoke row says so. Once you have revoked one, take it off this
   machine too — `npx tinhead-mcp forget` removes the connection **and deletes its stored code**.
   Worth doing rather than leaving: this server refuses to guess when a machine holds more than one
-  connection, and a dead one still counts, so a single stale entry makes the live ones need an
-  explicit `TINHEAD_GRANT`.
+  connection whose name it was not told, and a dead one still counts.
+- **Forgetting a connection breaks the configs that name it**, and this tool cannot edit them for
+  you. `forget` says which name just became unresolvable; either log a replacement in under that
+  name (no config change) or remove that server from your client.
 - **Level order is oldest-first**, which may not be the order you see in the app — the app can
   sort a level three ways and this does not read that setting.
 - **Archived thoughts are not searched or listed**, matching what you see in the app. One is still
