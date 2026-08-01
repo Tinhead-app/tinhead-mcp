@@ -45,6 +45,7 @@ import {
 } from './keychain';
 import { NOT_YET_GRANTED } from './scope';
 import { serve } from './server';
+import { claudeAddCommand, configBlock } from './setupHints';
 
 const say = (s: string) => process.stderr.write(`${s}\n`);
 
@@ -104,33 +105,12 @@ async function readStdin(prompt: string): Promise<string> {
  * `connections.json`, so this line is safe in scrollback, in a screenshot, and in
  * a support thread — which is exactly why setup can be one copied line at all.
  */
-function claudeAddCommand(pick: string | null): string {
-  const env = pick ? `--env TINHEAD_GRANT=${pick} ` : '';
-  return `claude mcp add ${env}--transport stdio tinhead -- npx -y tinhead-mcp`;
-}
-
 /**
- * The block people paste into `.mcp.json`. Env only when this machine is
- * ambiguous, and then ONE variable: the address is already in `connections.json`
- * beside the code, and a second value in the block is both a thing to get wrong
- * and a copy to go stale if the gateway ever moves. `TINHEAD_URL` stays an
- * override for whoever needs it, unprinted.
+ * `claudeAddCommand` and `configBlock` live in `setupHints.ts` — pure, no
+ * imports, and therefore unit-testable. They are the last instruction a person
+ * reads before this works or does not, and the Windows form of the first one was
+ * wrong for every user until somebody ran it.
  */
-function configBlock(pick: string | null): string {
-  return JSON.stringify(
-    {
-      mcpServers: {
-        tinhead: {
-          command: 'npx',
-          args: ['-y', 'tinhead-mcp'],
-          ...(pick ? { env: { TINHEAD_GRANT: pick } } : {}),
-        },
-      },
-    },
-    null,
-    2
-  );
-}
 
 async function login(args: string[]): Promise<void> {
   if (args.length > 0) {

@@ -1,6 +1,6 @@
 # tinhead-mcp — source
 
-The published source of [`tinhead-mcp`](https://www.npmjs.com/package/tinhead-mcp) v0.1.0,
+The published source of [`tinhead-mcp`](https://www.npmjs.com/package/tinhead-mcp) v0.1.1,
 the local MCP server that gives an agent access to branches of your Tinhead tree.
 
 **Why this repository exists.** The Tinhead app is closed source. This package is not, because

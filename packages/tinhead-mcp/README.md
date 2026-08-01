@@ -101,15 +101,27 @@ this tool tells you so, every time it starts.** A silent downgrade would be the 
 it in a config file. (That file is written `0600` on macOS and Linux; on Windows the mode bits are
 a no-op and it is protected by your user profile's ACL and nothing else.)
 
-**3. Register it with your agent:**
+**3. Register it with your agent.** `login` prints the exact line for your machine — copy that
+rather than this. On macOS and Linux it looks like:
 
 ```bash
-claude mcp add --transport stdio tinhead -- npx -y tinhead-mcp
+claude mcp add tinhead -- npx -y tinhead-mcp
 ```
 
-That is the whole of it — no secrets, no address, nothing to fill in, because this machine already
-knows which connection that is. The line is safe to paste anywhere: the code is in your credential
-store and the address is in `connections.json`, so nothing sensitive is in it.
+**On Windows it is a different command, and this is not a typo:**
+
+```powershell
+claude mcp add-json tinhead '{\"command\":\"npx\",\"args\":[\"-y\",\"tinhead-mcp\"]}'
+```
+
+`claude` on Windows is an npm-generated PowerShell shim, and the `--` that stops option parsing is
+lost before it reaches the CLI — so the first command fails there with `error: unknown option '-y'`,
+including in its own documentation's form. `add-json` takes one argument and needs no separator, and
+the backslashes are because PowerShell strips bare double quotes out of a native command's arguments.
+
+Either way: no secrets, no address, nothing to fill in, because this machine already knows which
+connection that is. The line is safe to paste anywhere — the code is in your credential store and
+the address is in `connections.json`.
 
 Using a different MCP client? Add this to its config instead:
 

@@ -1,6 +1,6 @@
 {
   "name": "tinhead-mcp-source",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Build tree for tinhead-mcp. Installs the dependencies its sources resolve from the root.",
   "license": "Apache-2.0",
