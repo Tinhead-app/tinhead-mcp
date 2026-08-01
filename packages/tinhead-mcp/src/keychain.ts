@@ -520,3 +520,46 @@ export async function rememberGrant(grant: StoredGrant): Promise<void> {
     'utf8'
   );
 }
+
+/**
+ * Take a connection off this machine — **the row AND the secret**, from every
+ * home either could have. Returns whether a row was actually listed, so the
+ * caller can tell "removed" from "there was nothing by that name" rather than
+ * guessing at it.
+ *
+ * **Why this exists.** A revoked or paused grant stayed here for ever: the
+ * gateway refuses it with the right sentence and nothing could act on that
+ * sentence. Worse than untidy — `resolveConnection` counts rows, so ONE dead
+ * connection made every live one on the machine ambiguous, and the working one
+ * could not be used without naming it explicitly in a config file.
+ *
+ * **The secret goes under BOTH names, for the same reason `loadToken` reads
+ * both.** A login made before `storeKey` existed stored it under the plain id,
+ * and forgetting the row while leaving a token sealed on disk is precisely the
+ * shadowing bug the store-and-fallback pair already had to fix once: a later
+ * login under the same id would find the orphan and prefer it.
+ *
+ * The secret is removed even when no row is listed, which is what makes this
+ * able to clean up after a `connections.json` that was hand-edited or lost.
+ */
+export async function forgetGrant(grantId: string): Promise<boolean> {
+  const before = await listGrants();
+  const rest = before.filter((g) => g.grantId !== grantId);
+  const listed = rest.length !== before.length;
+
+  // Secret first: if the rewrite below failed we would rather be left with a row
+  // pointing at nothing than a token nothing will ever ask for again.
+  await forgetUnder(storeKey(grantId));
+  const legacy = legacyKey(grantId);
+  if (legacy) await forgetUnder(legacy);
+
+  if (listed) {
+    const dir = await ensureDir();
+    await writeFile(
+      join(dir, CONNECTIONS),
+      `${JSON.stringify({ connections: rest }, null, 2)}\n`,
+      'utf8'
+    );
+  }
+  return listed;
+}

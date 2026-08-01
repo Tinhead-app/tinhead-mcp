@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 /**
- * `tinhead-mcp` — the command line. Two things and no more.
+ * `tinhead-mcp` — the command line. Three things and no more.
  *
- *   tinhead-mcp login   paste ONE setup code from Tinhead. Nothing else to type.
- *   tinhead-mcp         connect and serve on stdio (what an MCP client runs)
+ *   tinhead-mcp login    paste ONE setup code from Tinhead. Nothing else to type.
+ *   tinhead-mcp forget   take a connection off this machine, code and all.
+ *   tinhead-mcp          connect and serve on stdio (what an MCP client runs)
+ *
+ * **NOTHING HERE EVER ECHOES AN ARGUMENT.** `login` takes none, `forget` refuses
+ * a wrong one by listing the ids it does know, and an unrecognised command is
+ * answered without naming it. The reason is one shape of mistake: a person whose
+ * first instinct is to paste the setup code onto the command line, whose scrollback
+ * would then hold the one perishable secret this product ever shows.
  *
  * **Why `login` takes no argument.** It used to take the connection id and read
  * the token on stdin — two opaque strings from one screen, both 40-odd
@@ -36,6 +43,7 @@ import { SetupCode, SetupCodeError, decodeSetupCode } from '../../../src/agent/s
 import { connect } from './session';
 import {
   TokenStore,
+  forgetGrant,
   listGrants,
   loadToken,
   purgeCodeShapedNames,
@@ -43,6 +51,7 @@ import {
   stateDir,
   storeToken,
 } from './keychain';
+import { GatewayError } from './gateway';
 import { NOT_YET_GRANTED } from './scope';
 import { serve } from './server';
 import { claudeAddCommand, configBlock } from './setupHints';
@@ -202,6 +211,67 @@ async function login(args: string[]): Promise<void> {
 }
 
 /**
+ * `forget` — take a connection off this machine.
+ *
+ * **It never echoes its argument.** Everything else here treats a pasted code as
+ * the one thing that must not reach scrollback, and an error like "no connection
+ * called <what you typed>" would put one there the first time somebody pastes a
+ * setup code at this command instead of at `login`. So a wrong argument is
+ * answered with the ids this machine DOES know — those are not secret (§4.5) —
+ * and never with what was typed.
+ *
+ * With no argument it lists and asks, which is also the only way to reach a
+ * connection whose id you do not have to hand.
+ */
+async function forget(args: string[]): Promise<void> {
+  if (args.length > 1) {
+    return fail('usage: tinhead-mcp forget [<connection id>]');
+  }
+  const all = await listGrants();
+  if (all.length === 0) {
+    return fail('this machine has no connections stored, so there is nothing to forget.');
+  }
+
+  const known = (): string[] => ['It knows these:', ...all.map((g) => `  ${g.grantId}  (${g.url})`)];
+  let target = args[0]?.trim() ?? '';
+
+  if (!target) {
+    say('Connections stored on this machine:\n');
+    all.forEach((g, i) => say(`  ${i + 1}. ${g.grantId}\n     ${g.url}`));
+    const answer = await readStdin('\nforget which one? (a number, or blank to cancel): ');
+    if (!answer) {
+      say('nothing was forgotten.');
+      return;
+    }
+    const n = Number(answer);
+    if (!Number.isInteger(n) || n < 1 || n > all.length) {
+      // The answer is not echoed either: a person who pastes a code at a prompt
+      // asking for a number has made exactly the mistake worth not printing.
+      return fail(`that is not one of 1-${all.length}. Nothing was forgotten.`);
+    }
+    target = all[n - 1].grantId;
+  } else if (!all.some((g) => g.grantId === target)) {
+    return fail('this machine has no connection with that id.', ...known());
+  }
+
+  const removed = await forgetGrant(target);
+  say(
+    removed
+      ? `forgotten: ${target}\nIts stored code has been deleted from this machine. The connection ` +
+          'itself still exists in Tinhead until you take it back there (Settings › Plugins).'
+      : 'there was no such connection, but any stored code under that id has been deleted.'
+  );
+
+  const left = await listGrants();
+  if (left.length === 1) {
+    say(
+      `\nOne connection left (${left[0].grantId}), so this machine no longer needs TINHEAD_GRANT ` +
+        'in its MCP config — you can remove it.'
+    );
+  }
+}
+
+/**
  * Which connection this process is. Environment first — both variables together
  * are the escape hatch for someone running two accounts out of one config —
  * then what `login` stored, which is the ordinary case and needs no environment
@@ -252,8 +322,14 @@ async function resolveConnection(): Promise<{ grantId: string; baseUrl: string }
     `this machine holds ${stored.length} connections, so it cannot tell which one you mean:`,
     ...stored.map((g) => `  ${g.grantId}  (${g.url})`),
     '',
-    'Set TINHEAD_GRANT to the one you want, in your MCP client config. This block names the most',
-    'recent login — put whichever id you meant in its place:',
+    // Named here because a DEAD row is the common reason for this refusal: one
+    // revoked connection makes every live one on the machine ambiguous, and the
+    // person reading this is the one who can say which is which.
+    'If one of those is finished with, `tinhead-mcp forget` takes it off this machine — and if it',
+    'leaves exactly one, nothing below is needed at all.',
+    '',
+    'Otherwise set TINHEAD_GRANT to the one you want, in your MCP client config. This block names',
+    'the most recent login — put whichever id you meant in its place:',
     configBlock(stored[stored.length - 1].grantId)
   );
   return null;
@@ -309,9 +385,25 @@ async function serveDefault(): Promise<void> {
   } catch (err) {
     // Both of these came out of stored state the person cannot see, so a bare
     // `fetch failed` leaves them nothing to check. Name them.
+    //
+    // A 401/403 is the gateway saying this grant is revoked or paused, which is
+    // terminal for the connection rather than for this attempt — so the way out
+    // is said HERE, in the message somebody is already reading, rather than left
+    // for them to find. Only for those two: a 429 or a network blip is not a
+    // reason to delete anything.
+    const refused = err instanceof GatewayError && (err.status === 401 || err.status === 403);
     return fail(
       `could not connect as ${conn.grantId} to ${conn.baseUrl}`,
-      String(err instanceof Error ? err.message : err)
+      String(err instanceof Error ? err.message : err),
+      ...(refused
+        ? [
+            '',
+            'If that connection is finished with, take it off this machine:',
+            '  npx tinhead-mcp forget',
+            'It deletes the stored code too, and stops a dead connection making the live ones here',
+            'ambiguous.',
+          ]
+        : [])
     );
   }
   for (const line of banner(session.grant.scope)) say(line);
@@ -321,8 +413,16 @@ async function serveDefault(): Promise<void> {
 async function main(): Promise<void> {
   const [cmd, ...rest] = process.argv.slice(2);
   if (cmd === 'login') return login(rest);
+  if (cmd === 'forget') return forget(rest);
   if (cmd !== undefined) {
-    return fail(`no such command: ${cmd}`, 'usage: tinhead-mcp login   |   tinhead-mcp');
+    // The unknown command is NOT echoed. Someone whose first instinct is to
+    // paste their setup code as an argument lands exactly here, and naming it
+    // back would put the one perishable secret this product shows into their
+    // scrollback — which is the whole reason `login` takes no argument.
+    return fail(
+      'no such command.',
+      'usage: tinhead-mcp login   |   tinhead-mcp forget [<connection id>]   |   tinhead-mcp'
+    );
   }
   return serveDefault();
 }

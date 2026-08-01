@@ -1,6 +1,6 @@
 {
   "name": "tinhead-mcp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A local MCP door onto your Tinhead thought tree. Holds your key on your machine; the server never gets one it can use.",
   "license": "Apache-2.0",
   "author": "Tinhead",

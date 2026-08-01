@@ -207,7 +207,11 @@ as a document.
 - **It needs a Tinhead account with sync unlocked.** A local-only tree has no server to read from.
 - **Revoking stops the next process, not one already connected.** A grant that has been used has
   already handed this machine the key. That is what revocation can do until Tinhead ships key
-  rotation, and the app's own revoke row says so.
+  rotation, and the app's own revoke row says so. Once you have revoked one, take it off this
+  machine too — `npx tinhead-mcp forget` removes the connection **and deletes its stored code**.
+  Worth doing rather than leaving: this server refuses to guess when a machine holds more than one
+  connection, and a dead one still counts, so a single stale entry makes the live ones need an
+  explicit `TINHEAD_GRANT`.
 - **Level order is oldest-first**, which may not be the order you see in the app — the app can
   sort a level three ways and this does not read that setting.
 - **Archived thoughts are not searched or listed**, matching what you see in the app. One is still

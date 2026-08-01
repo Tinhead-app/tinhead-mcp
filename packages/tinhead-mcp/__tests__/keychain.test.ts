@@ -1,7 +1,8 @@
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { platform, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  forgetGrant,
   listGrants,
   loadToken,
   purgeCodeShapedNames,
@@ -221,5 +222,95 @@ suite('the non-secret half', () => {
     expect(await listGrants()).toEqual([]);
     await writeFile(join(stateDir(), 'connections.json'), 'not json', 'utf8');
     expect(await listGrants()).toEqual([]);
+  });
+});
+
+/**
+ * Forgetting a connection — the papercut this closes, and the thing it must not
+ * get wrong.
+ *
+ * A revoked grant used to stay here for ever. That is worse than untidy: the
+ * connection count is what decides whether this machine can pick a connection at
+ * all, so ONE dead row made every live one ambiguous and unusable without an
+ * explicit `TINHEAD_GRANT` in a config file.
+ *
+ * The risk in the fix is deleting the wrong thing, so every case below asserts
+ * what SURVIVED as well as what went.
+ */
+suite('forgetting a connection', () => {
+  const OTHER = '33333333-3333-4333-8333-333333333333';
+  const A = 'https://a.example/functions/v1/grant_gateway';
+  const B = 'https://b.example/functions/v1/grant_gateway';
+
+  afterEach(async () => {
+    for (const n of await names()) await rm(join(stateDir(), n), { force: true });
+  });
+
+  it('takes the row AND the stored code, and leaves the other connection whole', async () => {
+    await storeToken(GRANT, TOKEN);
+    await storeToken(OTHER, TOKEN);
+    await rememberGrant({ grantId: GRANT, url: A });
+    await rememberGrant({ grantId: OTHER, url: B });
+
+    expect(await forgetGrant(GRANT)).toBe(true);
+
+    // The row is gone…
+    expect(await listGrants()).toEqual([{ grantId: OTHER, url: B }]);
+    // …and so is the secret, which is the half that would otherwise be found by
+    // a later login under the same id and preferred over the fresh one.
+    expect(await loadToken(GRANT)).toBeNull();
+    // The survivor is untouched in both halves.
+    expect((await loadToken(OTHER))?.token).toBe(TOKEN);
+  });
+
+  it('is what makes a single remaining connection usable again', async () => {
+    // The exact papercut: two rows, one of them dead, and the live one cannot be
+    // resolved because the COUNT is what `resolveConnection` refuses on.
+    await rememberGrant({ grantId: GRANT, url: A });
+    await rememberGrant({ grantId: OTHER, url: B });
+    expect(await listGrants()).toHaveLength(2);
+
+    await forgetGrant(GRANT);
+    expect(await listGrants()).toHaveLength(1);
+  });
+
+  it('deletes a code stored under the PRE-DIGEST name too', async () => {
+    // A login made before `storeKey` existed. Forgetting the row while leaving
+    // this behind is the shadowing bug the store already had to fix once.
+    await rememberGrant({ grantId: GRANT, url: A });
+    await writeFile(join(stateDir(), `${GRANT}.token`), TOKEN, 'utf8');
+
+    await forgetGrant(GRANT);
+
+    expect(await names()).not.toContain(`${GRANT}.token`);
+    expect(await loadToken(GRANT)).toBeNull();
+  });
+
+  it('reports honestly when there was no such row, and still cleans up after it', async () => {
+    // `connections.json` hand-edited or lost, with the secret still on disk —
+    // the only route left to that secret.
+    await storeToken(GRANT, TOKEN);
+    expect((await loadToken(GRANT))?.token).toBe(TOKEN);
+
+    expect(await forgetGrant(GRANT)).toBe(false);
+    expect(await loadToken(GRANT)).toBeNull();
+  });
+
+  it('touches nothing on a machine that has no connections', async () => {
+    expect(await forgetGrant(GRANT)).toBe(false);
+    expect(await listGrants()).toEqual([]);
+  });
+
+  it('cannot be walked out of the state dir by a separator in the id', async () => {
+    const outside = join(tmp, 'not-ours.token');
+    await writeFile(outside, 'someone else’s file', 'utf8');
+    await rememberGrant({ grantId: GRANT, url: A });
+
+    await forgetGrant('../not-ours');
+
+    // Still there: `storeKey` hashes, and `legacyKey` refuses a separator, so no
+    // caller string reaches a path (the same rule `storeToken` is held to).
+    await expect(readFile(outside, 'utf8')).resolves.toContain('someone else');
+    expect(await listGrants()).toHaveLength(1);
   });
 });
