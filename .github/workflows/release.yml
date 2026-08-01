@@ -1,10 +1,24 @@
-# Publish tinhead-mcp to npm, with provenance.
+# Publish tinhead-mcp to npm using TRUSTED PUBLISHING (OIDC). No token.
 #
-# Provenance links the published tarball to this repository and this commit,
-# so "the source you can read is the code you installed" is attested by npm
-# rather than promised by us. It requires `id-token: write` and a public repo.
+# The runner proves its identity to npm with a short-lived, cryptographically
+# signed OIDC token scoped to this exact repository and workflow. Nothing
+# long-lived exists to leak, and provenance — "the source you can read is the
+# code you installed" — is attested by npm rather than promised by us.
 #
-# Needs one secret: NPM_TOKEN (an npm *automation* token).
+# NOTE: there is deliberately NO `env: NODE_AUTH_TOKEN` here. npm falls back to
+# OIDC only when that variable is entirely UNSET; an empty string is still a
+# value and npm will try to authenticate with it and fail.
+#
+# Setup, once, at npmjs.com > the package > Settings > Trusted Publisher:
+#   organization/user: Tinhead-app · repository: tinhead-mcp
+#   workflow: release.yml
+# npm requires the package to EXIST before a trusted publisher can be added
+# (npm/cli#8544), which is why 0.0.0 was published by hand once and nothing
+# since has been.
+#
+# Token-based publishing was the plan until 2026-07-08, when GitHub announced
+# that 2FA-bypass granular tokens lose direct publishing around January 2027.
+# This is the path npm is steering everyone to, so it is the one to be on.
 name: release
 
 on:
@@ -33,7 +47,9 @@ jobs:
       - run: npm test
       # `prepublishOnly` re-builds and runs scripts/prepublish-check.mjs, so a
       # release cannot ship while the metadata or the licence is incomplete.
+      #
+      # `--provenance` is redundant under trusted publishing (npm attests by
+      # default) and is kept because it states the intent in the file that has
+      # to hold it true.
       - run: npm publish --provenance --access public
         working-directory: packages/tinhead-mcp
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
